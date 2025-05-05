@@ -10,12 +10,44 @@ const MovieCard = ({ movie, apiKey }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [trailerUrl, setTrailerUrl] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [userRating, setUserRating] = useState(null);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [userVote, setUserVote] = useState(null); // 'up', 'down', or null
+  const [voteCount, setVoteCount] = useState({ up: 0, down: 0 });
+  const [reviews, setReviews] = useState([]);
+  const [newReview, setNewReview] = useState("");
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const iframeRef = useRef(null);
 
   const tmdbApiKey = "4e70c274526d10d420c2fd3ffa306f89";
   const youtubeApiKey = "AIzaSyB8oph20rT-4U6n1mhcmPXX4PXH7K2jdaI";
 
   useEffect(() => {
+    // Load user rating from localStorage if exists
+    const savedRating = localStorage.getItem(`movie_${movie.imdbID}_rating`);
+    if (savedRating) {
+      setUserRating(parseInt(savedRating));
+    }
+
+    // Load vote data from localStorage
+    const savedVote = localStorage.getItem(`movie_${movie.imdbID}_vote`);
+    const savedVotes = localStorage.getItem(`movie_${movie.imdbID}_votes`);
+    
+    if (savedVote) {
+      setUserVote(savedVote);
+    }
+    if (savedVotes) {
+      setVoteCount(JSON.parse(savedVotes));
+    }
+
+    // Load reviews from localStorage
+    const savedReviews = localStorage.getItem(`movie_${movie.imdbID}_reviews`);
+    if (savedReviews) {
+      setReviews(JSON.parse(savedReviews));
+    }
+
     const fetchMovieDetails = async () => {
       try {
         // Fetch from OMDB
@@ -95,7 +127,7 @@ const MovieCard = ({ movie, apiKey }) => {
     };
 
     fetchMovieDetails();
-  }, [movie.imdbID, apiKey]);
+  }, [movie.imdbID, apiKey, currentPage]); // Added currentPage to dependencies
 
   useEffect(() => {
     // Close modal when pressing Escape key
@@ -118,6 +150,53 @@ const MovieCard = ({ movie, apiKey }) => {
     ));
   };
 
+  const renderUserRatingStars = (rating, isInteractive = false) => {
+    return Array.from({ length: 10 }).map((_, i) => (
+      <span 
+        key={i}
+        className={`text-xl cursor-pointer ${isInteractive ? 'hover:scale-125 transition-transform' : ''} ${
+          i < (hoverRating || rating) ? "text-yellow-400" : "text-gray-400"
+        }`}
+        onMouseEnter={isInteractive ? () => setHoverRating(i + 1) : null}
+        onMouseLeave={isInteractive ? () => setHoverRating(0) : null}
+        onClick={isInteractive ? () => {
+          const newRating = i + 1;
+          setUserRating(newRating);
+          localStorage.setItem(`movie_${movie.imdbID}_rating`, newRating.toString());
+        } : null}
+      >
+        {i < (hoverRating || rating) ? "★" : "☆"}
+      </span>
+    ));
+  };
+
+  const handleVote = (type) => {
+    const newVoteCount = { ...voteCount };
+    let newUserVote = userVote;
+
+    if (userVote === type) {
+      // Remove vote if clicking the same button
+      newVoteCount[type] -= 1;
+      newUserVote = null;
+    } else if (userVote) {
+      // Switching vote
+      newVoteCount[userVote] -= 1;
+      newVoteCount[type] += 1;
+      newUserVote = type;
+    } else {
+      // New vote
+      newVoteCount[type] += 1;
+      newUserVote = type;
+    }
+
+    setVoteCount(newVoteCount);
+    setUserVote(newUserVote);
+    
+    // Save to localStorage
+    localStorage.setItem(`movie_${movie.imdbID}_vote`, newUserVote);
+    localStorage.setItem(`movie_${movie.imdbID}_votes`, JSON.stringify(newVoteCount));
+  };
+
   const handlePlayClick = (e) => {
     e.stopPropagation();
     if (trailerUrl) {
@@ -132,17 +211,62 @@ const MovieCard = ({ movie, apiKey }) => {
   const handleCloseModal = () => {
     setShowDetails(false);
     setIsPlaying(false);
+    setShowReviewForm(false);
     // Pause the video when closing
     if (iframeRef.current) {
       iframeRef.current.src = '';
     }
   };
 
+  const handleAddReview = () => {
+    if (newReview.trim()) {
+      const review = {
+        id: Date.now(),
+        text: newReview.trim(),
+        date: new Date().toLocaleDateString(),
+        rating: userRating || null
+      };
+      
+      const updatedReviews = [...reviews, review];
+      setReviews(updatedReviews);
+      setNewReview("");
+      setShowReviewForm(false);
+      
+      // Save to localStorage
+      localStorage.setItem(`movie_${movie.imdbID}_reviews`, JSON.stringify(updatedReviews));
+    }
+  };
+
+  const handleDeleteReview = (id) => {
+    const updatedReviews = reviews.filter(review => review.id !== id);
+    setReviews(updatedReviews);
+    
+    // Save to localStorage
+    localStorage.setItem(`movie_${movie.imdbID}_reviews`, JSON.stringify(updatedReviews));
+  };
+
+  // Pagination handlers
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+  };
+
   return (
     <>
-      {/* Movie Card */}
+      {/* Movie Card - Updated to Netflix-style sizing */}
       <div
-        className="relative w-64 h-36 rounded-md overflow-hidden transition-all duration-300 ease-in-out cursor-pointer"
+        className="relative w-[200px] h-[300px] rounded-md overflow-hidden transition-all duration-300 ease-in-out cursor-pointer shadow-lg hover:shadow-xl hover:z-10 hover:scale-105"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={() => setShowDetails(true)}
@@ -171,6 +295,14 @@ const MovieCard = ({ movie, apiKey }) => {
                 </div>
               )}
             </div>
+            {userRating && (
+              <div className="flex items-center text-xs mt-1">
+                <span className="text-gray-300 mr-1">Your rating:</span>
+                <div className="flex">
+                  {renderUserRatingStars(userRating)}
+                </div>
+              </div>
+            )}
             {trailerUrl && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                 <button
@@ -192,7 +324,7 @@ const MovieCard = ({ movie, apiKey }) => {
       {/* Expanded View */}
       {showDetails && details && (
         <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
-          <div className="relative w-full max-w-4xl h-[80vh] bg-gray-900 rounded-lg overflow-hidden">
+          <div className="relative w-full max-w-4xl h-[90vh] bg-gray-900 rounded-lg overflow-hidden">
             {/* Background Image */}
             <div className="absolute inset-0 overflow-hidden">
               {details.Poster && details.Poster !== "N/A" && (
@@ -213,7 +345,7 @@ const MovieCard = ({ movie, apiKey }) => {
             </button>
 
             {/* Content */}
-            <div className="relative h-full flex flex-col md:flex-row">
+            <div className="relative h-full flex flex-col md:flex-row overflow-y-auto">
               {/* Left Poster - Hidden when playing trailer */}
               {!isPlaying && (
                 <div className="w-full md:w-1/3 p-6 flex items-center justify-center">
@@ -232,7 +364,7 @@ const MovieCard = ({ movie, apiKey }) => {
               )}
 
               {/* Right Content */}
-              <div className={`${isPlaying ? 'w-full' : 'w-full md:w-2/3'} p-6 flex flex-col justify-center text-white`}>
+              <div className={`${isPlaying ? 'w-full' : 'w-full md:w-2/3'} p-6 flex flex-col justify-start text-white`}>
                 {isPlaying ? (
                   <div className="w-full h-full flex flex-col">
                     <div className="aspect-w-16 aspect-h-9 w-full h-[70vh]">
@@ -273,6 +405,22 @@ const MovieCard = ({ movie, apiKey }) => {
                       <span className="text-gray-300">{details.Rated}</span>
                     </div>
 
+                    {/* User Rating Section */}
+                    <div className="mb-4">
+                      <h3 className="text-gray-400 mb-2">Your Rating</h3>
+                      <div className="flex items-center">
+                        <div className="flex mr-4" 
+                          onMouseLeave={() => setHoverRating(0)}>
+                          {renderUserRatingStars(userRating || 0, true)}
+                        </div>
+                        {userRating && (
+                          <span className="text-yellow-400">
+                            {userRating}/10
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
                     <p className="text-lg mb-6">{details.Plot}</p>
 
                     <div className="grid grid-cols-2 gap-4 mb-6">
@@ -295,7 +443,7 @@ const MovieCard = ({ movie, apiKey }) => {
                     </div>
 
                     {/* Buttons */}
-                    <div className="flex space-x-4">
+                    <div className="flex space-x-4 items-center mb-6">
                       <button
                         onClick={handlePlayClick}
                         disabled={!trailerUrl}
@@ -308,9 +456,155 @@ const MovieCard = ({ movie, apiKey }) => {
                         <span className="mr-2">▶</span>
                         {trailerUrl ? "Play Trailer" : "Trailer Not Available"}
                       </button>
-                      <button className="bg-gray-600 bg-opacity-70 text-white px-6 py-2 rounded-md font-semibold hover:bg-opacity-100 transition">
-                        + My List
-                      </button>
+
+                      {/* Voting buttons */}
+                      <div className="flex items-center space-x-2 ml-4">
+                        <button
+                          onClick={() => handleVote('up')}
+                          className={`flex items-center px-3 py-2 rounded-md transition ${
+                            userVote === 'up' 
+                              ? 'bg-green-600 text-white' 
+                              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                          }`}
+                        >
+                          <span className="mr-1 text-lg">👍</span>
+                          <span className="text-sm font-medium">{voteCount.up}</span>
+                        </button>
+                        <button
+                          onClick={() => handleVote('down')}
+                          className={`flex items-center px-3 py-2 rounded-md transition ${
+                            userVote === 'down' 
+                              ? 'bg-red-600 text-white' 
+                              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                          }`}
+                        >
+                          <span className="mr-1 text-lg">👎</span>
+                          <span className="text-sm font-medium">{voteCount.down}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Reviews Section */}
+                    <div className="mt-6 border-t border-gray-700 pt-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold">Reviews</h2>
+                        <button
+                          onClick={() => setShowReviewForm(!showReviewForm)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
+                        >
+                          {showReviewForm ? 'Cancel' : 'Add Review'}
+                        </button>
+                      </div>
+
+                      {/* Review Form */}
+                      {showReviewForm && (
+                        <div className="mb-6 bg-gray-800 p-4 rounded-lg">
+                          <textarea
+                            value={newReview}
+                            onChange={(e) => setNewReview(e.target.value)}
+                            placeholder="Write your review here..."
+                            className="w-full bg-gray-700 text-white p-3 rounded-md mb-3 h-32"
+                          />
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <span className="text-gray-400 mr-2">Your Rating:</span>
+                              <div className="inline-flex" onMouseLeave={() => setHoverRating(0)}>
+                                {renderUserRatingStars(userRating || 0, true)}
+                              </div>
+                            </div>
+                            <button
+                              onClick={handleAddReview}
+                              disabled={!newReview.trim()}
+                              className={`${
+                                newReview.trim()
+                                  ? "bg-green-600 hover:bg-green-700"
+                                  : "bg-gray-600 cursor-not-allowed"
+                              } text-white px-4 py-2 rounded-md`}
+                            >
+                              Submit Review
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Reviews List */}
+                      {reviews.length > 0 ? (
+                        <div className="space-y-4">
+                          {reviews.map((review) => (
+                            <div key={review.id} className="bg-gray-800 p-4 rounded-lg relative">
+                              <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  {review.rating && (
+                                    <div className="flex items-center mb-1">
+                                      <span className="text-gray-400 mr-2">Rating:</span>
+                                      <div className="flex">
+                                        {renderUserRatingStars(review.rating)}
+                                      </div>
+                                    </div>
+                                  )}
+                                  <p className="text-white">{review.text}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteReview(review.id)}
+                                  className="text-gray-400 hover:text-red-500 ml-2"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-2">
+                                Posted on {review.date}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-400 italic">No reviews yet. Be the first to review!</p>
+                      )}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="mt-auto pt-6 border-t border-gray-700">
+                      <div className="flex justify-between items-center">
+                        <button
+                          onClick={handlePrevPage}
+                          disabled={currentPage === 1}
+                          className={`px-4 py-2 rounded-md ${
+                            currentPage === 1
+                              ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                              : "bg-blue-600 hover:bg-blue-700 text-white"
+                          }`}
+                        >
+                          Previous
+                        </button>
+                        
+                        <div className="flex space-x-2">
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                            <button
+                              key={page}
+                              onClick={() => handlePageChange(page)}
+                              className={`w-10 h-10 rounded-md ${
+                                page === currentPage
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          ))}
+                        </div>
+                        
+                        <button
+                          onClick={handleNextPage}
+                          disabled={currentPage === totalPages}
+                          className={`px-4 py-2 rounded-md ${
+                            currentPage === totalPages
+                              ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                              : "bg-blue-600 hover:bg-blue-700 text-white"
+                          }`}
+                        >
+                          Next
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
